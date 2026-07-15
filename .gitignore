@@ -74,3 +74,4 @@ testImage.png
 yolov8n.pt
 *.ps1
 *.txt
+*.task
