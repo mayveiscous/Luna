@@ -38,6 +38,7 @@
 *.exe
 *.out
 *.app
+*.elf
 
 # Build directories
 build/
@@ -68,5 +69,8 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# self brief of project
-BRIEF.md
+# others
+testImage.png
+yolov8n.pt
+*.ps1
+*.txt
