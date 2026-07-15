@@ -11,16 +11,13 @@ namespace luna {
 static PyObject* lua_table_to_python(lua_State* L, int idx) {
     idx = lua_absindex(L, idx);
 
-    // A table counts as a "simple list" if its raw length covers every
-    // key present, i.e. it's a dense 1..n integer-keyed array with no
-    // extra string keys mixed in. Anything else becomes a dict.
     lua_Integer array_len = static_cast<lua_Integer>(lua_rawlen(L, idx));
 
     lua_Integer total_keys = 0;
     lua_pushnil(L);
     while (lua_next(L, idx) != 0) {
         total_keys++;
-        lua_pop(L, 1); // pop value, keep key for the next lua_next
+        lua_pop(L, 1);
     }
 
     if (total_keys == 0) {
@@ -42,7 +39,7 @@ static PyObject* lua_table_to_python(lua_State* L, int idx) {
                 Py_DECREF(list);
                 return nullptr;
             }
-            PyList_SET_ITEM(list, i - 1, item); // steals reference
+            PyList_SET_ITEM(list, i - 1, item);
         }
         return list;
     }
@@ -53,20 +50,19 @@ static PyObject* lua_table_to_python(lua_State* L, int idx) {
     }
     lua_pushnil(L);
     while (lua_next(L, idx) != 0) {
-        // key at -2, value at -1
         PyObject* pkey = lua_to_python(L, -2);
         PyObject* pval = pkey ? lua_to_python(L, -1) : nullptr;
         if (!pkey || !pval) {
             Py_XDECREF(pkey);
             Py_XDECREF(pval);
-            lua_pop(L, 2); // pop key + value, table conversion failed
+            lua_pop(L, 2);
             Py_DECREF(dict);
             return nullptr;
         }
-        PyDict_SetItem(dict, pkey, pval); // does not steal
+        PyDict_SetItem(dict, pkey, pval);
         Py_DECREF(pkey);
         Py_DECREF(pval);
-        lua_pop(L, 1); // pop value, keep key for the next lua_next
+        lua_pop(L, 1);
     }
     return dict;
 }
@@ -105,7 +101,6 @@ PyObject* lua_to_python(lua_State* L, int idx) {
             return nullptr;
 
         default:
-            // Functions, threads, light userdata, etc: no mapping.
             return nullptr;
     }
 }
@@ -127,8 +122,6 @@ void push_python_to_lua(lua_State* L, PyObject* obj, PyObject* bound_self) {
         if (overflow == 0) {
             lua_pushinteger(L, static_cast<lua_Integer>(v));
         } else {
-            // Doesn't fit in a 64-bit integer; fall back to a double
-            // rather than failing outright.
             PyErr_Clear();
             lua_pushnumber(L, PyLong_AsDouble(obj));
         }
@@ -185,8 +178,32 @@ void push_python_to_lua(lua_State* L, PyObject* obj, PyObject* bound_self) {
         return;
     }
 
-    // Everything else -- modules, classes, functions, bound methods,
-    // instances, numpy arrays, whatever -- stays a live Python object.
+    if (PyIndex_Check(obj)) {
+        PyObject* as_int = PyNumber_Index(obj);
+        if (as_int) {
+            int overflow = 0;
+            long long v = PyLong_AsLongLongAndOverflow(as_int, &overflow);
+            if (overflow == 0) {
+                lua_pushinteger(L, static_cast<lua_Integer>(v));
+            } else {
+                PyErr_Clear();
+                lua_pushnumber(L, PyLong_AsDouble(as_int));
+            }
+            Py_DECREF(as_int);
+            return;
+        }
+        PyErr_Clear();
+    }
+
+    if (Py_TYPE(obj)->tp_as_number && Py_TYPE(obj)->tp_as_number->nb_float) {
+        double d = PyFloat_AsDouble(obj);
+        if (!(d == -1.0 && PyErr_Occurred())) {
+            lua_pushnumber(L, d);
+            return;
+        }
+        PyErr_Clear();
+    }
+
     pyobject_push(L, obj, bound_self);
 }
 

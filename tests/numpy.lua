@@ -1,11 +1,5 @@
--- Demonstrates that a real third-party C-extension library (numpy) works
--- through the exact same generic mechanism as builtins/io/math in the
--- test suite -- nothing in the bridge knows numpy exists.
-
-package.cpath = package.cpath .. ";./build/?.dll"
-print(package.cpath)
-
 local py = require("python")
+
 local np = py.import("numpy")
 
 print("numpy version:", np.__version__)

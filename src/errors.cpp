@@ -9,9 +9,6 @@ extern "C" {
 
 namespace luna {
 
-// Best-effort str() of a Python object. Falls back to a placeholder
-// rather than letting a secondary exception during error reporting
-// itself propagate.
 static std::string safe_str(PyObject* obj, const char* fallback) {
     if (!obj) {
         return fallback;

@@ -33,50 +33,99 @@ static int pyobject_tostring(lua_State* L) {
     return 1;
 }
 
-// __index(self, key) -- attribute lookup, e.g. `np.array` or `camera.read`.
 static int pyobject_index(lua_State* L) {
     PyObjectHandle* handle = pyobject_check(L, 1);
+
+    if (lua_isinteger(L, 2)) {
+        lua_Integer index = lua_tointeger(L, 2);
+
+        // Lua is 1 based, Python is 0 based
+        PyObject* item = PySequence_GetItem(
+            handle->obj,
+            index - 1
+        );
+
+        if (!item) {
+            if (PyErr_ExceptionMatches(PyExc_IndexError)) {
+                PyErr_Clear();
+                lua_pushnil(L);
+                return 1;
+            }
+
+            errors_raise_from_python(L);
+            return 0;
+        }
+
+        push_python_to_lua(L, item, nullptr);
+        Py_DECREF(item);
+        return 1;
+    }
+
+
     const char* key = luaL_checkstring(L, 2);
 
-    PyObject* attr = PyObject_GetAttrString(handle->obj, key);
+    PyObject* attr = PyObject_GetAttrString(
+        handle->obj,
+        key
+    );
+
     if (!attr) {
         errors_raise_from_python(L);
         return 0;
     }
 
-    // Only remember the parent object as a binding source when the
-    // attribute is actually callable -- that's the only case __call's
-    // self-stripping logic needs to look at.
-    PyObject* parent_for_binding = PyCallable_Check(attr) ? handle->obj : nullptr;
+    PyObject* parent_for_binding =
+        PyCallable_Check(attr)
+            ? handle->obj
+            : nullptr;
 
-    push_python_to_lua(L, attr, parent_for_binding);
+    push_python_to_lua(
+        L,
+        attr,
+        parent_for_binding
+    );
+
     Py_DECREF(attr);
+
     return 1;
 }
 
-// __newindex(self, key, value) -- attribute assignment, e.g. `object.value = 42`.
+
 static int pyobject_newindex(lua_State* L) {
     PyObjectHandle* handle = pyobject_check(L, 1);
-    const char* key = luaL_checkstring(L, 2);
 
     PyObject* value = lua_to_python(L, 3);
     if (!value) {
-        return luaL_error(L, "unsupported Lua value for python attribute '%s'", key);
+        return luaL_error(L, "unsupported Lua value");
     }
 
-    int rc = PyObject_SetAttrString(handle->obj, key, value);
+    int rc = 0;
+
+    if (lua_isinteger(L, 2)) {
+        // Lua is 1 based, Python is 0 based
+        lua_Integer index = lua_tointeger(L, 2);
+
+        PyObject* key = PyLong_FromLong(static_cast<long>(index - 1));
+
+        rc = PyObject_SetItem(handle->obj, key, value);
+
+        Py_DECREF(key);
+    } else {
+        const char* key = luaL_checkstring(L, 2);
+
+        rc = PyObject_SetAttrString(handle->obj, key, value);
+    }
+
     Py_DECREF(value);
+
     if (rc != 0) {
         errors_raise_from_python(L);
         return 0;
     }
+
     return 0;
 }
 
-// __call(self, ...) -- invoking a Python callable, including the
-// self-stripping needed to make `obj:method(args)` behave correctly
-// against Python's already-bound methods. See PyObjectHandle::bound_self
-// in py_object.hpp for the full explanation.
 static int pyobject_call(lua_State* L) {
     PyObjectHandle* handle = pyobject_check(L, 1);
 
@@ -102,7 +151,7 @@ static int pyobject_call(lua_State* L) {
             Py_DECREF(py_args);
             return luaL_error(L, "unsupported Lua value at argument %d", i + 1);
         }
-        PyTuple_SET_ITEM(py_args, i, converted); // steals reference
+        PyTuple_SET_ITEM(py_args, i, converted);
     }
 
     PyObject* result = PyObject_CallObject(handle->obj, py_args);
@@ -113,14 +162,6 @@ static int pyobject_call(lua_State* L) {
         return 0;
     }
 
-    // Python's convention for a function returning "multiple values" is
-    // a tuple; Lua's is genuinely separate return values. Map one to the
-    // other right here, at the call boundary -- this is exactly what
-    // makes `local ok, frame = camera:read()` from the brief's own
-    // example work. A tuple encountered anywhere else (an attribute, a
-    // dict value, a list element) still becomes a single Lua table via
-    // push_python_to_lua, since a table field can't hold "multiple
-    // values"; this special case only applies to a call's direct result.
     if (PyTuple_Check(result)) {
         Py_ssize_t n = PyTuple_GET_SIZE(result);
         for (Py_ssize_t i = 0; i < n; ++i) {
