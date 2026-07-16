@@ -75,3 +75,4 @@ yolov8n.pt
 *.ps1
 *.txt
 *.task
+/vscode
