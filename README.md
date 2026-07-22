@@ -20,14 +20,14 @@ local img = cv2.imread("photo.png")
 
 Luna links CPython directly into the Lua process and bridges values across the boundary through a small set of building blocks:
 
-- **`python.import(name)`** (`bridge.cpp`) — calls `PyImport_ImportModule` and hands back the module wrapped as a Lua value.
-- **`PyObjectHandle`** (`py_object.hpp/cpp`) — every Python object that crosses into Lua is stored as userdata holding a `PyObject*` (plus an optional bound `self`, for methods). A shared metatable gives it Lua semantics:
-  - `__index` — attribute/item access; Lua integer keys go through `PySequence_GetItem` (converted to 0-based), string keys go through `PyObject_GetAttrString`. Callable attributes are remembered as bound to their parent, so calling `obj:method(args)` works correctly.
+- **`python.import(name)`** calls `PyImport_ImportModule` and hands back the module wrapped as a Lua value.
+- **`PyObjectHandle`** Every Python object that crosses into Lua is stored as userdata holding a `PyObject*` (plus an optional bound `self`, for methods). A shared metatable gives it Lua semantics:
+  - `__index` - attribute/item access; Lua integer keys go through `PySequence_GetItem` (converted to 0-based), string keys go through `PyObject_GetAttrString`. Callable attributes are remembered as bound to their parent, so calling `obj:method(args)` is valid.
   - `__newindex` — mirrors the above for assignment (`PyObject_SetItem` / `PyObject_SetAttrString`).
   - `__call` — invokes the underlying `PyObject` with `PyObject_CallObject`, unpacking Python tuple returns into multiple Lua return values.
   - `__gc` — releases the Python reference (`Py_DECREF`) when the Lua userdata is collected.
   - `__tostring` — delegates to Python's `str()`.
-- **Value conversion** (`conversions.cpp`) — converts plain values automatically in both directions so you rarely touch a `PyObjectHandle` directly:
+- **Value conversion**  Luna converts plain values automatically in both directions so you rarely touch a `PyObjectHandle` directly:
 
   | Lua | Python |
   |---|---|
@@ -42,12 +42,12 @@ Luna links CPython directly into the Lua process and bridges values across the b
 
   Numeric Python objects that only implement `__index__`/`__float__` (e.g. NumPy scalar types) still convert to plain Lua numbers rather than staying wrapped.
 
-- **Error propagation** (`errors.cpp`) — any pending Python exception is fetched, normalized, and re-raised as a Lua error formatted as `ExceptionType: message`, so `pcall` works as expected on the Lua side.
-- **Runtime bootstrap** (`python_runtime.cpp`) — initializes the interpreter once per process with `Py_InitializeFromConfig`, pointing its module search path (including `site-packages`) at an embedded Python distribution baked into the build.
+- **Error propagation** Luna resolves any pending Python exception by fetching, normalizing, and raising  a Lua error formatted as `ExceptionType: message`, so `pcall` works as expected on the Lua side.
+- **Runtime bootstrap** Luna initializes the interpreter once per process with `Py_InitializeFromConfig`, pointing its module search path (including `site-packages`) at an embedded Python distribution baked into the build.
 
 ## Usage notes
 
-- **Indexing is 1-based on the Lua side.** `obj[1]` maps to Python index `0`.
+- **Indexing is 1-based** `obj[1]` maps to Python index `0`.
 - **Method calls** on wrapped objects work naturally: `obj:method(x, y)` — Luna detects the `self`-binding pattern and won't double-pass it.
 - **Tables sent into Python** are inferred as `list` vs `dict` based on whether they're a dense 1-based array; sparse or mixed-key tables become `dict`s with Lua's keys converted individually.
 - **Errors** from Python (import failures, attribute errors, exceptions raised inside a call) surface as normal Lua errors — wrap calls in `pcall` if you want to handle them.
