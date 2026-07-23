@@ -9,6 +9,7 @@ extern "C" {
 
 namespace luna {
 
+// safely convert char* to PyObject
 static std::string safe_str(PyObject* obj, const char* fallback) {
     if (!obj) {
         return fallback;
@@ -24,11 +25,13 @@ static std::string safe_str(PyObject* obj, const char* fallback) {
     return result;
 }
 
+// catch python errors and call luaL_error()
 void errors_raise_from_python(lua_State* L) {
     PyObject *type = nullptr, *value = nullptr, *traceback = nullptr;
     PyErr_Fetch(&type, &value, &traceback);
     PyErr_NormalizeException(&type, &value, &traceback);
 
+    // figure out error type
     std::string type_name = "Exception";
     if (type) {
         PyObject* name = PyObject_GetAttrString(type, "__name__");
@@ -43,6 +46,7 @@ void errors_raise_from_python(lua_State* L) {
         }
     }
 
+    // safely convert
     std::string message = safe_str(value, "<no message>");
 
     Py_XDECREF(type);
